@@ -1,0 +1,44 @@
+# 模型参数
+model_name_or_path: '/root/autodl-tmp/Qwen2.5-3B-Instruct'
+model_revision: main  # 指定加载模型的Git分支或版本号
+torch_dtype: bfloat16 # 设置PyTorch张量的默认数据类型为BF16，减少显存占用并加速计算
+attn_implementation: flash_attention_2 # 使用Flash Attention 2优化注意力计算，提升长序列处理速度并降低显存需求（支持A100等GPU）
+bf16: true            # 启用BF16混合精度训练
+tf32: true            # 启用TensorFloat-32（TF32）加速矩阵运算（仅适用于Ampere架构及以上GPU，如A100、H100）
+output_dir: '/root/autodl-tmp/Qwen2.5-3B-Instruct-rl'
+
+# 数据集参数
+dataset_id_or_path: '/root/autodl-tmp/Countdown-Tasks-3to4'
+
+# Swanlab 训练流程记录参数
+swanlab: true # 是否开启 Swanlab 
+workspace: 'tom_zhou'
+project: 'Datawhale-R1-by_tom'
+experiment_name: 'qwen2.5-3B-lr:5e-7_beta:0.001'
+
+# 训练参数
+max_steps: 450 # 最大训练步数（总迭代次数），与gradient_accumulation_steps共同决定实际数据遍历轮次
+per_device_train_batch_size: 1 # 每个GPU的批处理大小，受显存限制。值为1时，单卡单次处理1条样本
+gradient_accumulation_steps: 8 # 梯度累积步数，模拟更大的有效批大小（有效批大小 = per_device_batch_size * gradient_accumulation_steps * GPU数量）
+gradient_checkpointing: true   # 启用梯度检查点技术，通过牺牲部分计算时间换取显存节省（约减少30%显存）
+gradient_checkpointing_kwargs:
+  use_reentrant: false         # 禁用重入式梯度检查点（Reentrant Checkpointing），提升计算效率（需PyTorch 2.0+支持）
+learning_rate: 5.0e-7 # [学习率，调整过，参见下文介绍]
+lr_scheduler_type: cosine # 学习率衰减方案 余弦学习率调度器，随训练步数逐渐降低学习率
+warmup_ratio: 0.03 # 学习率预热比率（对于整个步长），好用！ 学习率预热比例，前3%的步数（约13步）线性增加学习率，避免初始阶段参数剧烈震荡
+seed: 2025 # 随机种子，方便实验复现
+
+# GRPO 算法参数
+beta: 0.001 # [KL 惩罚因子，调整过，参见下文介绍] KL散度惩罚系数，控制新旧策略的差异。值越大，策略更新越保守（防止过度偏离旧策略）
+max_prompt_length: 256      # 输入 prompt 最大长度，本实验基本不会有太大变化
+max_completion_length: 4096 # 输出回答长度，包含推理思维链，设为 4K 比较合适
+num_generations: 8          # 每次策略迭代时生成的候选响应数量，用于优势计算和策略更新
+use_vllm: true              # 启用 vllm 来加速推理  使用vLLM框架加速生成推理（基于PagedAttention技术），提升吞吐量
+vllm_device: 'cuda:2'       # 指定vLLM推理使用的GPU设备编号（通常与训练设备分离，避免资源争抢）
+vllm_gpu_memory_utilization: 0.5 # 限制vLLM占用的GPU显存比例（50%），防止显存溢出
+
+# Logging arguments
+logging_strategy: steps     # 按训练步数间隔记录日志（与logging_steps配合）
+logging_steps: 1            # 每1步训练记录一次指标（如损失、奖励值）
+save_strategy: "steps"      # 按训练步数间隔保存模型（与save_steps配合）
+save_steps: 50              # 每隔多少步保存一次

@@ -1,0 +1,68 @@
+一、训练批次大小
+训练集样本数：N = 1000 条
+
+单卡配置参数：
+per_device_train_batch_size: 1
+gradient_accumulation_steps: 8
+max_steps: 450
+
+有效批大小 = 1（单卡batch size）×8（梯度累积步数）×1（单卡）=8
+每个Epoch的步数 = 1000/8=125
+总Epoch=450/125=3.6
+
+二、梯度检查点gradient_checkpointing
+仅保存部分激活（如每4层保存一次），其余激活在反向传播时重新计算
+时间换空间。显存降低30%，时间成本增加50%
+
+三、use_reentrant: false  禁用梯度检查点
+重入式（Reentrant Checkpointing）：旧版本默认模式，通过【【递归方式】】处理计算图，但存在兼容性限制。
+非重入式（Non-Reentrant Checkpointing）：PyTorch 2.0+引入的新模式，通过【【闭包（Closure）重构计算图】】，支持动态控制流并提升效率。
+
+示例对比：处理循环结构的模型
+1、模型定义
+import torch
+from torch.utils.checkpoint import checkpoint
+
+class LoopLayer(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.linear = torch.nn.Linear(256, 256)
+
+    def forward(self, x, num_loops=3):  # 循环调用3次
+        for _ in range(num_loops):
+            x = self.linear(x)
+        return x
+
+场景1：启用重入式检查点（use_reentrant=True）
+model = LoopLayer()
+input = torch.randn(1, 256)
+
+# 前向传播（启用梯度检查点）
+def forward_fn(x):
+    return model(x, num_loops=3)
+
+# 使用重入式检查点
+output = checkpoint(forward_fn, input, use_reentrant=True)
+loss = output.sum()
+loss.backward()
+
+由于循环结构导致动态计算图，重入式检查点无法正确追踪多次循环中的参数共享（self.linear被多次调用），反向传播时梯度计算会出错，
+提示 RuntimeError: Trying to backward through the graph a second time。
+
+场景2：禁用重入式检查点（use_reentrant=False）
+# 使用非重入式检查点
+output = checkpoint(forward_fn, input, use_reentrant=False)
+loss = output.sum()
+loss.backward()  # 正常执行
+
+结果：
+非重入模式通过闭包重构计算图，正确记录循环中的参数更新路径，梯度计算成功完成。
+
+技术优势对比
+特性	            重入式（Reentrant）	          非重入式（Non-Reentrant）
+动态控制流支持	不支持循环、条件分支等动态结构	支持动态计算图（如循环、条件语句）
+显存占用	        较高（递归保存中间状态）	    较低（优化内存管理）
+计算速度	        较慢（递归开销）	            较快（并行化优化）
+PyTorch版本要求	所有版本	                    需PyTorch 2.0+
+
+

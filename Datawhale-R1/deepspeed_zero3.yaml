@@ -1,0 +1,22 @@
+compute_environment: LOCAL_MACHINE # 指定计算环境为本地机器（非云环境）适用于单机或多卡训练，无需跨节点通信
+debug: false # 关闭冗余日志输出，提升训练效率
+deepspeed_config: #
+  deepspeed_multinode_launcher: standard # 使用标准的DeepSpeed多节点启动器
+  offload_optimizer_device: none         # 不将优化器状态卸载到 CPU。完全依赖 GPU 内存，速度更快但显存占用较高
+  offload_param_device: none   # 不将模型参数卸载到 CPU
+  zero3_init_flag: true        # 启用 ZeRO-3 的延迟参数初始化模式。仅在需要时加载参数分片，进一步减少显存占用
+  zero3_save_16bit_model: true # 保存 16 位精度的模型权重
+  zero_stage: 3                # 优化器、梯度、参数都进行分片
+distributed_type: DEEPSPEED    # 指定使用 DeepSpeed 框架进行分布式训练
+downcast_bf16: 'no'            # 不将 BF16 精度向下转换（如 FP16）  保持 BF16 精度，避免精度损失
+machine_rank: 0                # 当前机器的全局排名，多机训练时需为每台机器分配唯一排名（单机默认为 0）
+main_training_function: main   # 指定主训练函数为 main()，训练脚本的入口函数名称
+mixed_precision: bf16          # 启用 BF16 混合精度训练
+num_machines: 1                # 单机多卡训练时设为 1，多机训练时需调整
+num_processes: 8               # 我们在这里保持常规默认的 8 卡机器，会在后面的启动命令中覆盖新值
+rdzv_backend: static           # 使用的是静态的后端来进行rendezvous（会合点发现）。在单机设置中，这通常是合适的
+same_network: true             # 假设所有机器在同一局域网内
+tpu_env: []                 # 禁用 TPU 相关配置，仅适用于 Google TPU 环境，此处未启用
+tpu_use_cluster: false
+tpu_use_sudo: false
+use_cpu: false  # 禁用 CPU 训练模式，强制用GPU进行训练
